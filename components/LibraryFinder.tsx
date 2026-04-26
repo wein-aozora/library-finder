@@ -32,22 +32,11 @@ function haversineKm(lat1: number, lon1: number, lat2: number, lon2: number) {
 }
 
 async function fetchLibraries(lat: number, lon: number, radiusM: number): Promise<Library[]> {
-  const query = `
-    [out:json][timeout:30];
-    (
-      node["amenity"="library"](around:${radiusM},${lat},${lon});
-      way["amenity"="library"](around:${radiusM},${lat},${lon});
-      relation["amenity"="library"](around:${radiusM},${lat},${lon});
-    );
-    out center tags;
-  `;
+  const res = await fetch(
+    `/api/libraries?lat=${lat}&lon=${lon}&radius=${radiusM}`
+  );
 
-  const res = await fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST",
-    body: query,
-  });
-
-  if (!res.ok) throw new Error("Overpass API エラー");
+  if (!res.ok) throw new Error("図書館の検索に失敗しました");
 
   const data = await res.json();
 
