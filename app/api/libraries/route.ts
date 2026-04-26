@@ -1,5 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 
+export const maxDuration = 30;
+
+const OVERPASS_ENDPOINTS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://lz4.overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+];
+
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const lat = searchParams.get("lat");
@@ -10,30 +18,36 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "lat and lon are required" }, { status: 400 });
   }
 
-  const query = `
-    [out:json][timeout:30];
-    (
-      node["amenity"="library"](around:${radius},${lat},${lon});
-      way["amenity"="library"](around:${radius},${lat},${lon});
-      relation["amenity"="library"](around:${radius},${lat},${lon});
-    );
-    out center tags;
-  `;
+  const query = `[out:json][timeout:25];(node["amenity"="library"](around:${radius},${lat},${lon});way["amenity"="library"](around:${radius},${lat},${lon});relation["amenity"="library"](around:${radius},${lat},${lon}););out center tags;`;
 
-  const res = await fetch("https://overpass-api.de/api/interpreter", {
-    method: "POST",
-    body: query,
-    headers: { "Content-Type": "text/plain" },
-    next: { revalidate: 0 },
-  });
+  let lastError = "";
 
-  if (!res.ok) {
-    return NextResponse.json(
-      { error: `Overpass API returned ${res.status}` },
-      { status: 502 }
-    );
+  for (const endpoint of OVERPASS_ENDPOINTS) {
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 25000);
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        body: query,
+        headers: { "Content-Type": "text/plain" },
+        signal: controller.signal,
+      });
+
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        lastError = `${endpoint} returned ${res.status}`;
+        continue;
+      }
+
+      const data = await res.json();
+      return NextResponse.json(data);
+    } catch (e) {
+      lastError = e instanceof Error ? e.message : String(e);
+      continue;
+    }
   }
 
-  const data = await res.json();
-  return NextResponse.json(data);
+  return NextResponse.json({ error: lastError }, { status: 502 });
 }
